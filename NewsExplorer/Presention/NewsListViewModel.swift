@@ -5,22 +5,48 @@
 //  Created by Md Mazharul Islam on 12/1/26.
 //
 
+enum ViewState<Value> {
+    case idle
+    case loading
+    case loaded(Value)
+    case empty
+    case error(String)
+}
+
 import Combine
 import Foundation
 
 final class NewsListViewModel: ObservableObject {
 
+    // Data
     @Published private(set) var articles: [Article] = []
     @Published private(set) var errorMessage: String?
+    @Published private(set) var state: ViewState<[Article]> = .idle
+
+    // Search
+    @Published var searchText: String = ""
+    @Published private(set) var filteredArticles: [Article] = []
+
+    // Expose what the UI should render
+    var displayedArticles: [Article] {
+        isSearching ? filteredArticles : articles
+    }
+
+    var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     private let apiClient: APIClientProtocol
     private var cancellables = Set<AnyCancellable>()
 
     init(apiClient: APIClientProtocol = APIClient()) {
         self.apiClient = apiClient
+        bindSearch()
     }
 
     func fetchNews() {
+        state = .loading
+
         apiClient.request(NewsEndpoint.appleNews)
             .map { (response: NewsResponseDTO) in
                 response.articles.map {
@@ -33,15 +59,60 @@ final class NewsListViewModel: ObservableObject {
             }
             .sink(
                 receiveCompletion: { [weak self] completion in
+                    guard let self else { return }
                     if case .failure(let error) = completion {
-                        self?.errorMessage = error.localizedDescription
-                        print(error.localizedDescription)
+                        let message = error.localizedDescription
+                        self.errorMessage = message
+                        self.state = .error(message)
+                        print(message)
                     }
                 },
                 receiveValue: { [weak self] articles in
-                    self?.articles = articles
+                    guard let self else { return }
+                    self.articles = articles
+                    // Re-evaluate filtering with the latest data
+                    self.applyFilter(self.searchText)
+                    if articles.isEmpty {
+                        self.state = .empty
+                    } else {
+                        self.state = .loaded(articles)
+                    }
                 }
             )
             .store(in: &cancellables)
     }
+
+    // MARK: - Search binding
+
+    private func bindSearch() {
+        $searchText
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .removeDuplicates()
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .sink { [weak self] query in
+                self?.applyFilter(query)
+            }
+            .store(in: &cancellables)
+
+        $articles
+            .combineLatest($searchText.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .map { articles, query -> [Article] in
+                Self.filter(articles: articles, with: query)
+            }
+            .assign(to: &$filteredArticles)
+    }
+
+    private func applyFilter(_ query: String) {
+        filteredArticles = Self.filter(articles: articles, with: query)
+    }
+
+    private static func filter(articles: [Article], with query: String) -> [Article] {
+        let q = query.lowercased()
+        guard !q.isEmpty else { return [] }
+        return articles.filter { article in
+            article.title.lowercased().contains(q) ||
+            article.description.lowercased().contains(q)
+        }
+    }
 }
+
