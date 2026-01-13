@@ -7,32 +7,49 @@
 
 import UIKit
 
-enum AlertManager {
+import SwiftUI
 
-    static func presentError(on presenter: UIViewController,
-                             title: String = "Something went wrong",
-                             message: String,
-                             retryTitle: String = "Retry",
-                             cancelTitle: String = "Cancel",
-                             onRetry: (() -> Void)? = nil) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+final class AlertManager {
+    static let shared = AlertManager()
+    private init() {}
 
-        if let onRetry = onRetry {
-            alert.addAction(UIAlertAction(title: retryTitle, style: .default) { _ in onRetry() })
-        }
+    private var window: UIWindow? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.windows.first
+    }
 
-        alert.addAction(UIAlertAction(title: cancelTitle, style: .cancel, handler: nil))
+    func showAlert(title: String, message: String) {
+        presentAlert(title: title, message: message, actions: [
+            UIAlertAction(title: "OK", style: .default)
+        ])
+    }
 
-        // Ensure presented on the main queue
+    func showAlertWithAction(
+        title: String,
+        message: String,
+        submitTitle: String = "Okay",
+        submitAction: @escaping () -> Void = {}
+    ) {
+        presentAlert(title: title, message: message, actions: [
+            UIAlertAction(title: submitTitle, style: .default) { _ in submitAction() }
+        ])
+    }
+
+    private func presentAlert(title: String, message: String, actions: [UIAlertAction]) {
         DispatchQueue.main.async {
-            // Avoid presenting multiple alerts if one is already shown
-            if presenter.presentedViewController == nil {
-                presenter.present(alert, animated: true)
-            } else if let nav = presenter.presentedViewController as? UINavigationController,
-                      nav.presentedViewController == nil {
-                nav.present(alert, animated: true)
-            }
+            guard let topController = self.topMostViewController() else { return }
+            let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
+            actions.forEach { alertController.addAction($0) }
+            topController.present(alertController, animated: true)
         }
     }
-}
 
+    private func topMostViewController() -> UIViewController? {
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController {
+            top = presented
+        }
+        return top
+    }
+}

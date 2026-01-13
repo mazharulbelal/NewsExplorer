@@ -26,8 +26,29 @@ final class APIClient: APIClientProtocol {
         }
 
         return URLSession.shared.dataTaskPublisher(for: url)
-            .map(\.data)
+            .tryMap { output -> Data in
+                guard let http = output.response as? HTTPURLResponse else {
+                    throw NetworkError.badResponse
+                }
+                let status = http.statusCode
+                guard (200...299).contains(status) else {
+                    throw NetworkError.fromHTTPStatus(status)
+                }
+                return output.data
+            }
             .decode(type: T.self, decoder: JSONDecoder())
+            .mapError { error -> Error in
+                if error is DecodingError {
+                    return NetworkError.decodingFailed
+                }
+                if let net = error as? NetworkError {
+                    return net
+                }
+                if let urlError = error as? URLError {
+                    return NetworkError.from(urlError)
+                }
+                return NetworkError.unknown
+            }
             .receive(on: DispatchQueue.main)
             .eraseToAnyPublisher()
     }

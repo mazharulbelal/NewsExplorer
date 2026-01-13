@@ -73,29 +73,28 @@ final class NewsListViewController: UIViewController {
     }
     
     private func bindViewModel() {
-        // Reload table when displayed data changes
-        Publishers.CombineLatest3(viewModel.$articles, viewModel.$filteredArticles, viewModel.$searchText)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _, _, _ in
-                guard let self else { return }
-                // Adjust visibility for search mode
-                if self.viewModel.isSearching {
-                    let hasResults = !self.viewModel.filteredArticles.isEmpty
-                    self.setContentVisibility(showTable: hasResults, showEmpty: !hasResults)
-                } else {
-                    // Fall back to state-driven visibility
-                    self.updateUI(for: self.viewModel.state)
-                }
-                self.tableView.reloadData()
-            }
-            .store(in: &cancellables)
-        
+
         viewModel.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
                 guard let self else { return }
                 if self.viewModel.isSearching { return }
                 self.updateUI(for: state)
+            }
+            .store(in: &cancellables)
+        
+        viewModel.$searchText
+            .combineLatest(viewModel.$filteredArticles)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _ in
+                guard let self else { return }
+                if self.viewModel.isSearching {
+                    let hasResults = !self.viewModel.filteredArticles.isEmpty
+                    self.setContentVisibility(showTable: hasResults, showEmpty: !hasResults)
+                } else {
+                    self.updateUI(for: self.viewModel.state)
+                }
+                self.tableView.reloadData()
             }
             .store(in: &cancellables)
     }
@@ -123,9 +122,7 @@ final class NewsListViewController: UIViewController {
         case .error(let message):
             LoaderView.hide()
             setContentVisibility(showTable: false, showEmpty: false)
-            AlertManager.presentError(on: self, message: message) { [weak self] in
-                self?.viewModel.fetchNews()
-            }
+            AlertManager.shared.showAlert(title: "", message: message)
         }
     }
     
