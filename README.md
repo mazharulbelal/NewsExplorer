@@ -173,6 +173,9 @@ protocol APIClientProtocol {
 3. Add your **News API key** in `AppEnvironment.swift`
 4. Run on an iPhone simulator or device
 
+❗❗❗ Note: Currently, the API key is kept in AppEnvironment.swift for simplicity.
+For production or public repositories, store API keys in a secure location, such as environment variables or a secure plist.
+
 ---
 
 ## 👨‍💻 Author
